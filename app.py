@@ -1,14 +1,9 @@
-# app12.py — final updated version (reactive, fixes >7-courses bug + clearer error)
-"""
-Streamlit RIASEC Survey App — app12 final
-- Q1..Q42 Yes/No survey
-- 30-course "THOUGHT EXPERIMENT ON CHOICE" block (3 columns × 10 rows) between Q42 and Submit
-- Max 7 selections enforced with clear error message (e.g., "You selected 9 — max allowed is 7")
-- All widgets reactive (no form) so the Submit button state updates immediately
-- Writes to Google Sheets: submissions, answers, scores, choices
-"""
-
 import streamlit as st
+
+# MUST BE FIRST - before ANY other Streamlit commands
+st.set_page_config(page_title="RIASEC Survey", layout="wide")
+
+# Now import everything else
 import pandas as pd
 import json
 import uuid
@@ -19,11 +14,6 @@ import plotly.graph_objects as go
 from google.oauth2.service_account import Credentials
 import gspread
 from gspread.exceptions import WorksheetNotFound, APIError, GSpreadException
-
-# -------------------------
-# Page config
-# -------------------------
-st.set_page_config(page_title="RIASEC Survey — app12 (final)", layout="wide")
 
 # -------------------------
 # QUESTIONS (Q1..Q42)
@@ -43,7 +33,7 @@ QUESTIONS = [
     (12, "Q12. I like to teach or train people", 'S'),
     (13, "Q13. I like trying to help people solve their problems", 'S'),
     (14, "Q14. I like to take care of animals", 'R'),
-    (15, "Q15. I wouldn’t mind working 8 hours per day in an office", 'C'),
+    (15, "Q15. I wouldn't mind working 8 hours per day in an office", 'C'),
     (16, "Q16. I like selling things", 'E'),
     (17, "Q17. I enjoy creative writing", 'A'),
     (18, "Q18. I enjoy science", 'I'),
@@ -67,7 +57,7 @@ QUESTIONS = [
     (36, "Q36. I like to lead", 'E'),
     (37, "Q37. I like working outdoors", 'R'),
     (38, "Q38. I would like to work in an office", 'C'),
-    (39, "Q39. I’m good at math", 'I'),
+    (39, "Q39. I'm good at math", 'I'),
     (40, "Q40. I like helping people", 'S'),
     (41, "Q41. I like to draw", 'A'),
     (42, "Q42. I like to give speeches", 'E'),
@@ -75,7 +65,7 @@ QUESTIONS = [
 TRAITS = ['R', 'I', 'A', 'S', 'E', 'C']
 
 # -------------------------
-# COURSES (30 titles you provided)
+# COURSES (30 titles)
 # -------------------------
 COURSES = [
     "ENVIRONMENTAL STUDIES",
@@ -296,20 +286,18 @@ def make_radar_chart(scores_df, title="RIASEC Profile"):
     return fig
 
 # -------------------------
-# Utility initialization
+# Session state initialization
 # -------------------------
-# Keep course checkbox state across reruns
 if 'course_checks' not in st.session_state or len(st.session_state.course_checks) != len(COURSES):
     st.session_state.course_checks = [False] * len(COURSES)
 
-# Keep question answers in session_state keys q_1 ... q_42 so widgets persist
 for qid, _, _ in QUESTIONS:
     key = f"q_{qid}"
     if key not in st.session_state:
-        st.session_state[key] = "—"  # default
+        st.session_state[key] = "—"
 
 # -------------------------
-# UI
+# Main UI
 # -------------------------
 st.title("RIASEC Survey")
 st.markdown("**Note:** All questions are mandatory. Please choose either a 'YES' or a 'NO' for the below questions")
@@ -319,7 +307,7 @@ if not gc:
     st.error("Google Sheets not configured or secrets missing. Please fix st.secrets.")
     st.stop()
 
-# --- Basic fields (Name, Degree, Email) ---
+# Basic fields
 name = st.text_input("Student name", key="name_input")
 degree = st.text_input("Current Enrolled Degree (e.g., B.Sc Computer Science)", key="degree_input")
 email = st.text_input("Email (optional)", key="email_input")
@@ -327,15 +315,14 @@ email = st.text_input("Email (optional)", key="email_input")
 st.markdown("---")
 st.markdown("Select **Yes** or **No** for each statement. Default is blank — you must choose.")
 
-# --- Questions as radio widgets (reactive) ---
+# Questions
 answers = []
 for qid, text, trait in QUESTIONS:
     choice = st.radio(f"{text}", options=["—", "Yes", "No"], index=0, key=f"q_{qid}", horizontal=True)
-    # recorded live in session_state via keys
     val = 1 if choice == "Yes" else 0 if choice == "No" else None
     answers.append((qid, trait, val))
 
-# --- Courses block (reactive) ---
+# Courses block
 st.markdown("### THOUGHT EXPERIMENT ON CHOICE")
 st.markdown("**If you have a chance to pick 7 courses to study, purely based on your interest & passion what courses would you like to study?**")
 st.markdown("1. A max of 7 selections is allowed.\n2. Please be candid in your response.\n3. The selection has to be only based on your interest and passion, so it's ok to choose a course even if you have no prior experience in that course.")
@@ -353,25 +340,19 @@ for col_idx, col in enumerate(cols):
 selected_count = sum(1 for v in st.session_state.course_checks if v)
 st.markdown(f"**Selected:** {selected_count} / 7")
 if selected_count > 7:
-    # show helpful error message telling exact number over limit
     over = selected_count - 7
     st.error(f"You selected {selected_count} courses — the maximum allowed is 7. Please uncheck {over} course(s).")
 
-# --- Consent (reactive) ---
+# Consent
 consent = st.checkbox("I consent to my responses being stored and used for analysis.", key="consent_input")
 
-# --- Compute validation state for Submit button ---
+# Validation
 missing_qs = [f"Q{qid}" for qid, trait, val in answers if val is None]
 all_questions_answered = (len(missing_qs) == 0)
 basic_info_ok = bool(name.strip()) and bool(degree.strip())
-courses_ok = (selected_count <= 7 and selected_count >= 1)  # require at least 1 selection? If you allow 0, set >=0
-# The user earlier wanted 1..7; if zero should be allowed adjust courses_ok accordingly.
 consent_ok = bool(consent)
-
-# Decide whether Submit should be enabled: require name, degree, all questions answered, consent, and selected_count between 1 and 7
 submit_enabled = basic_info_ok and all_questions_answered and consent_ok and (0 <= selected_count <= 7)
 
-# Show helpful inline errors if relevant
 if not basic_info_ok:
     st.info("Please enter your name and your current enrolled degree.")
 if missing_qs:
@@ -383,9 +364,8 @@ if selected_count == 0:
 if selected_count > 7:
     st.info("Reduce your selected courses to at most 7 to enable Submit.")
 
-# --- Submit button (reactive) ---
+# Submit button
 if st.button("Submit", disabled=not submit_enabled):
-    # final server-side checks
     if not basic_info_ok:
         st.error("Please fill Name and Degree.")
     elif missing_qs:
@@ -395,7 +375,6 @@ if st.button("Submit", disabled=not submit_enabled):
     elif selected_count > 7:
         st.error(f"Too many selections ({selected_count}) — please select at most 7.")
     else:
-        # compute scores and attempt writes
         answers_df = pd.DataFrame(answers, columns=["question_id", "trait", "answer"])
         scores_df = compute_standardized_scores(answers_df)
 
@@ -412,10 +391,7 @@ if st.button("Submit", disabled=not submit_enabled):
                 st.error(err2)
             else:
                 st.success("✅ Submission saved to Google Sheets (submissions, answers, scores, choices).")
-
-                # show results
                 st.subheader("Thank you for your response. The below is your RIASEC profile for your reference")
                 display_df = scores_df.set_index("trait")[["yes_count", "n_items", "prop", "score_percent"]].rename(columns={"prop":"proportion","score_percent":"standardized_percent"})
                 st.table(display_df)
                 st.plotly_chart(make_radar_chart(scores_df), use_container_width=True)
-
