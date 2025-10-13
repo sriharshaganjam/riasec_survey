@@ -311,8 +311,8 @@ for qid, _, _ in QUESTIONS:
 # -------------------------
 # UI
 # -------------------------
-st.title("RIASEC Yes/No Survey — app12 (final)")
-st.markdown("**Note:** All questions are mandatory (Yes/No). Thought experiment: choose up to 7 courses. Consent required to submit.")
+st.title("RIASEC Survey")
+st.markdown("**Note:** All questions are mandatory. Please choose either a 'YES' or a 'NO' for the below questions")
 
 gc, spreadsheet_id = get_gspread_client_from_secrets()
 if not gc:
@@ -419,37 +419,3 @@ if st.button("Submit", disabled=not submit_enabled):
                 st.table(display_df)
                 st.plotly_chart(make_radar_chart(scores_df), use_container_width=True)
 
-# -------------------------
-# Admin: quick view
-# -------------------------
-st.sidebar.header("Admin")
-if st.sidebar.button("Show Sheets (Admin)"):
-    try:
-        sh = get_spreadsheet(gc, spreadsheet_id)
-        try:
-            subs = pd.DataFrame(sh.worksheet("submissions").get_all_records())
-        except Exception:
-            subs = pd.DataFrame()
-        try:
-            ans = pd.DataFrame(sh.worksheet("answers").get_all_records())
-        except Exception:
-            ans = pd.DataFrame()
-        try:
-            scores = pd.DataFrame(sh.worksheet("scores").get_all_records())
-        except Exception:
-            scores = pd.DataFrame()
-        try:
-            choices = pd.DataFrame(sh.worksheet("choices").get_all_records())
-        except Exception:
-            choices = pd.DataFrame()
-
-        st.subheader(f"Submissions ({len(subs)})")
-        st.dataframe(subs)
-        st.subheader("Answers (latest 500)")
-        st.dataframe(ans.tail(500))
-        st.subheader("Scores (latest 500)")
-        st.dataframe(scores.tail(500))
-        st.subheader("Choices (latest 500)")
-        st.dataframe(choices.tail(500))
-    except Exception as e:
-        st.error(f"Error reading sheets: {e}")
