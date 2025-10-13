@@ -1,0 +1,14 @@
+# --------------------------
+# Python / Streamlit Project Git Ignore
+# --------------------------
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+*.env
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
