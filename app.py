@@ -324,7 +324,7 @@ if not gc:
 st.header("Informed Consent")
 
 st.subheader("Title of the Study: Assessing Student Vocational Interests Using The RIASEC Framework")
-st.markdown("**Principal Investigator/Administrator:** sriharsha.g@jainuniversity.ac.in")
+st.markdown("**Principal Investigator/Administrator:** Sriharsha Ganjam - sriharsha.g@jainuniversity.ac.in , Shambhavi Priya - 24msrps055@jainuniversity.ac.in")
 
 st.markdown("### Purpose Statement:")
 st.markdown("""
