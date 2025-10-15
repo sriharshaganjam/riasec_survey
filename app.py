@@ -7,7 +7,6 @@ st.set_page_config(page_title="RIASEC Survey", layout="wide")
 import pandas as pd
 import json
 import uuid
-import re
 from datetime import datetime, UTC
 import plotly.graph_objects as go
 
@@ -117,7 +116,6 @@ def get_gspread_client_from_secrets():
         spreadsheet_id = st.secrets["sheet"]["spreadsheet_id"]
         credentials = Credentials.from_service_account_info(sa_info, scopes=GS_SCOPES)
         gc = gspread.authorize(credentials)
-        # test access
         _ = gc.open_by_key(spreadsheet_id)
         return gc, spreadsheet_id
     except Exception as exc:
@@ -126,15 +124,17 @@ def get_gspread_client_from_secrets():
 
 @st.cache_resource
 def get_spreadsheet(_gc, spreadsheet_id):
-    """Return opened spreadsheet; _gc not hashed for caching."""
     return _gc.open_by_key(spreadsheet_id)
 
 def ensure_sheet_structure_and_headers(gc, spreadsheet_id):
-    """Create/verify all worksheets & headers (submissions, answers, scores, choices)."""
     sh = get_spreadsheet(gc, spreadsheet_id)
 
-    # submissions header
-    desired_sub_headers = ["submission_id", "student_name", "degree", "email", "timestamp", "consent_given", "consent_timestamp"]
+    # submissions header - updated to include consent checkboxes
+    desired_sub_headers = [
+        "submission_id", "student_name", "degree", "email", "timestamp",
+        "consent_purpose", "consent_confidentiality", "consent_participate",
+        "consent_timestamp"
+    ]
     try:
         sub_ws = sh.worksheet("submissions")
         current_headers = sub_ws.row_values(1)
@@ -171,7 +171,7 @@ def ensure_sheet_structure_and_headers(gc, spreadsheet_id):
         scores_ws = sh.add_worksheet(title="scores", rows="2000", cols="20")
         scores_ws.append_row(["submission_id","R_percent","I_percent","A_percent","S_percent","E_percent","C_percent"])
 
-    # choices header (submission_id + 30 course columns)
+    # choices header
     desired_choices_hdr = ["submission_id"] + COURSES
     try:
         choices_ws = sh.worksheet("choices")
@@ -186,15 +186,20 @@ def ensure_sheet_structure_and_headers(gc, spreadsheet_id):
 
     return sh
 
-def append_submission_answers_scores(gc, spreadsheet_id, submission_id, student_name, degree, email, timestamp, consent, consent_timestamp, answers, scores_df):
-    """Append submission, answers and scores. Returns (ok, err_msg)."""
+def append_submission_answers_scores(gc, spreadsheet_id, submission_id, student_name, degree, email, 
+                                     timestamp, consent_purpose, consent_confidentiality, 
+                                     consent_participate, consent_timestamp, answers, scores_df):
     try:
         sh = ensure_sheet_structure_and_headers(gc, spreadsheet_id)
         sub_ws = sh.worksheet("submissions")
         ans_ws = sh.worksheet("answers")
         scores_ws = sh.worksheet("scores")
 
-        sub_ws.append_row([submission_id, student_name, degree, email, timestamp, str(consent), consent_timestamp])
+        sub_ws.append_row([
+            submission_id, student_name, degree, email, timestamp,
+            str(consent_purpose), str(consent_confidentiality), 
+            str(consent_participate), consent_timestamp
+        ])
 
         rows = [[submission_id, qid, trait, ans] for qid, trait, ans in answers]
         if rows:
@@ -218,7 +223,6 @@ def append_submission_answers_scores(gc, spreadsheet_id, submission_id, student_
         return False, f"Unexpected error: {e}"
 
 def append_choices_row(gc, spreadsheet_id, submission_id, selected_bool_list):
-    """Append a choices row where selected_bool_list is list of 30 booleans in COURSE order."""
     try:
         sh = ensure_sheet_structure_and_headers(gc, spreadsheet_id)
         choices_ws = sh.worksheet("choices")
@@ -296,16 +300,92 @@ for qid, _, _ in QUESTIONS:
     if key not in st.session_state:
         st.session_state[key] = "—"
 
+# Initialize consent checkboxes
+if 'consent_purpose' not in st.session_state:
+    st.session_state.consent_purpose = False
+if 'consent_confidentiality' not in st.session_state:
+    st.session_state.consent_confidentiality = False
+if 'consent_participate' not in st.session_state:
+    st.session_state.consent_participate = False
+
 # -------------------------
 # Main UI
 # -------------------------
 st.title("RIASEC Survey")
-st.markdown("**Note:** All questions are mandatory. Please choose either a 'YES' or a 'NO' for the below questions")
 
 gc, spreadsheet_id = get_gspread_client_from_secrets()
 if not gc:
     st.error("Google Sheets not configured or secrets missing. Please fix st.secrets.")
     st.stop()
+
+# -------------------------
+# CONSENT FORM SECTION
+# -------------------------
+st.header("Informed Consent")
+
+st.subheader("Title of the Study: Assessing Student Vocational Interests Using The RIASEC Framework")
+st.markdown("**Principal Investigator/Administrator:** sriharsha.g@jainuniversity.ac.in")
+
+st.markdown("### Purpose Statement:")
+st.markdown("""
+The purpose of this survey is to understand individual vocational interests, preferences, and
+personality orientations using the RIASEC (Realistic, Investigative, Artistic, Social, Enterprising,
+Conventional) model. This information will be used for research, career guidance, and
+developmental feedback purposes only. Your participation in this survey is voluntary. You may 
+choose to withdraw at any time without any negative consequences. The estimated time to complete 
+the survey is approximately 10–15 minutes. Your participation in this survey may help you gain 
+insights into your vocational interests and possible career pathways aligned with your personal 
+strengths and preferences.
+""")
+
+consent_purpose = st.checkbox(
+    "I understand the purpose of this study and survey",
+    key="consent_purpose_check",
+    value=st.session_state.consent_purpose
+)
+st.session_state.consent_purpose = consent_purpose
+
+st.markdown("### Confidentiality Statement:")
+st.markdown("""
+All responses will be treated with strict confidentiality. Data will be stored securely and analyzed
+only in aggregated form. No personally identifiable information will be disclosed in reports or
+publications arising from this study.
+""")
+
+consent_confidentiality = st.checkbox(
+    "I understand the confidential implications of this survey",
+    key="consent_confidentiality_check",
+    value=st.session_state.consent_confidentiality
+)
+st.session_state.consent_confidentiality = consent_confidentiality
+
+st.markdown("### Consent Statement:")
+st.markdown("""
+By proceeding with this survey, you acknowledge that you have read and understood the above
+information and voluntarily consent to participate in this RIASEC-based study.
+""")
+
+consent_participate = st.checkbox(
+    "I agree to participate voluntarily in this survey",
+    key="consent_participate_check",
+    value=st.session_state.consent_participate
+)
+st.session_state.consent_participate = consent_participate
+
+# Check if all consent checkboxes are checked
+all_consents_given = consent_purpose and consent_confidentiality and consent_participate
+
+if not all_consents_given:
+    st.warning("⚠️ Please check all three consent boxes above to proceed with the survey.")
+    st.stop()
+
+st.success("✅ Consent received. You may now proceed with the survey.")
+st.markdown("---")
+
+# -------------------------
+# SURVEY SECTION (enabled only after consent)
+# -------------------------
+st.markdown("**Note:** All questions are mandatory. Please choose either a 'YES' or a 'NO' for the below questions")
 
 # Basic fields
 name = st.text_input("Student name", key="name_input")
@@ -343,22 +423,16 @@ if selected_count > 7:
     over = selected_count - 7
     st.error(f"You selected {selected_count} courses — the maximum allowed is 7. Please uncheck {over} course(s).")
 
-# Consent
-consent = st.checkbox("I consent to my responses being stored and used for analysis.", key="consent_input")
-
 # Validation
 missing_qs = [f"Q{qid}" for qid, trait, val in answers if val is None]
 all_questions_answered = (len(missing_qs) == 0)
 basic_info_ok = bool(name.strip()) and bool(degree.strip())
-consent_ok = bool(consent)
-submit_enabled = basic_info_ok and all_questions_answered and consent_ok and (0 <= selected_count <= 7)
+submit_enabled = basic_info_ok and all_questions_answered and (0 <= selected_count <= 7)
 
 if not basic_info_ok:
     st.info("Please enter your name and your current enrolled degree.")
 if missing_qs:
     st.info(f"Please answer all questions. Missing: {', '.join(missing_qs)}")
-if not consent_ok:
-    st.info("Consent is required to submit the survey.")
 if selected_count == 0:
     st.info("Please select up to 7 courses (you may select none if you prefer).")
 if selected_count > 7:
@@ -370,8 +444,6 @@ if st.button("Submit", disabled=not submit_enabled):
         st.error("Please fill Name and Degree.")
     elif missing_qs:
         st.error("Please answer all questions before submitting.")
-    elif not consent_ok:
-        st.error("Consent required.")
     elif selected_count > 7:
         st.error(f"Too many selections ({selected_count}) — please select at most 7.")
     else:
@@ -382,7 +454,14 @@ if st.button("Submit", disabled=not submit_enabled):
         timestamp = datetime.now(UTC).isoformat()
         consent_timestamp = timestamp
 
-        ok, err = append_submission_answers_scores(gc, spreadsheet_id, submission_id, name.strip(), degree.strip(), email.strip(), timestamp, True, consent_timestamp, answers, scores_df)
+        ok, err = append_submission_answers_scores(
+            gc, spreadsheet_id, submission_id, name.strip(), degree.strip(), 
+            email.strip(), timestamp, 
+            st.session_state.consent_purpose,
+            st.session_state.consent_confidentiality,
+            st.session_state.consent_participate,
+            consent_timestamp, answers, scores_df
+        )
         if not ok:
             st.error(err)
         else:
@@ -391,7 +470,24 @@ if st.button("Submit", disabled=not submit_enabled):
                 st.error(err2)
             else:
                 st.success("✅ Submission saved to Google Sheets (submissions, answers, scores, choices).")
-                st.subheader("Thank you for your response. The below is your RIASEC profile for your reference")
+                
+                st.markdown("---")
+                st.subheader("Thank you for participating in the RIASEC Vocational Interest Survey.")
+                
+                st.markdown("""
+                <div style="border: 2px solid #cccccc; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                This assessment is designed to identify your primary vocational interest types among six categories:<br><br>
+                • <b>Realistic (R):</b> Hands-on, practical, and mechanical work.<br>
+                • <b>Investigative (I):</b> Analytical, intellectual, and research-oriented roles.<br>
+                • <b>Artistic (A):</b> Creative, expressive, and design-oriented activities.<br>
+                • <b>Social (S):</b> Helping, teaching, or service-oriented careers.<br>
+                • <b>Enterprising (E):</b> Persuasive, leadership, and business-focused roles.<br>
+                • <b>Conventional (C):</b> Structured, detail-oriented, and data-driven work.<br><br>
+                Your scores reflect your preferences, not your abilities or limitations. There are no "right" or "wrong" answers in this assessment. The results will assist in identifying environments and tasks where you are most likely to find satisfaction and success.
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("### Your RIASEC Profile")
                 display_df = scores_df.set_index("trait")[["yes_count", "n_items", "prop", "score_percent"]].rename(columns={"prop":"proportion","score_percent":"standardized_percent"})
                 st.table(display_df)
                 st.plotly_chart(make_radar_chart(scores_df), use_container_width=True)
