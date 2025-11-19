@@ -11,4 +11,6 @@ ENV/
 
 # Streamlit secrets
 .streamlit/secrets.toml
-
+match1.Py
+match2.Py
+game.py
